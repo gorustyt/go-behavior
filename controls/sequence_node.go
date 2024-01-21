@@ -13,10 +13,23 @@ type SequenceNode struct {
 	index      int
 }
 
-func NewSequenceNode() *SequenceNode {
-	return &SequenceNode{
-		allSkipped: true,
+func NewSequenceNode(name string, cfg *core.NodeConfig, args ...interface{}) core.ITreeNode {
+	makeAynch := false
+	if len(args) > 0 {
+		makeAynch = args[0].(bool)
 	}
+	n := &SequenceNode{
+		ControlNode: core.NewControlNode(name, cfg),
+		allSkipped:  true,
+		asynch:      makeAynch,
+	}
+	if n.asynch {
+		n.SetRegistrationID("AsyncSequence")
+	} else {
+		n.SetRegistrationID("Sequence")
+	}
+
+	return n
 }
 
 func (n *SequenceNode) Halt() {
@@ -25,7 +38,7 @@ func (n *SequenceNode) Halt() {
 }
 
 func (n *SequenceNode) Tick() core.NodeStatus {
-	children_count := len(n.Children)
+	childrenCount := len(n.Children)
 
 	if n.Status() == core.NodeStatus_IDLE {
 		n.allSkipped = true
@@ -33,57 +46,46 @@ func (n *SequenceNode) Tick() core.NodeStatus {
 
 	n.SetStatus(core.NodeStatus_RUNNING)
 
-	for n.index < children_count {
-		current_child_node := n.Children[n.index]
+	for n.index < childrenCount {
+		currentChildNode := n.Children[n.index]
 
-		prev_status := current_child_node.Status()
-		child_status := current_child_node.ExecuteTick()
+		prevStatus := currentChildNode.Status()
+		childStatus := currentChildNode.ExecuteTick()
 
 		// switch to RUNNING state as soon as you find an active child
-		n.allSkipped = (child_status == core.NodeStatus_SKIPPED)
+		n.allSkipped = childStatus == core.NodeStatus_SKIPPED
 
-		switch child_status {
+		switch childStatus {
 		case core.NodeStatus_RUNNING:
 			{
 				return core.NodeStatus_RUNNING
 			}
 		case core.NodeStatus_FAILURE:
-			{
-				// Reset on failure
-				n.ResetChildren()
-				n.index = 0
-				return child_status
-			}
+			// Reset on failure
+			n.ResetChildren()
+			n.index = 0
+			return childStatus
 		case core.NodeStatus_SUCCESS:
-			{
-				n.index++
-				// Return the execution flow if the child is async,
-				// to make this interruptable.
-				if n.asynch && requiresWakeUp() &&
-					prev_status == core.NodeStatus_IDLE &&
-					n.index < children_count {
-					emitWakeUpSignal()
-					return core.NodeStatus_RUNNING
-				}
+			n.index++
+			// Return the execution flow if the child is async,
+			// to make this interruptable.
+			if n.asynch && n.RequiresWakeUp() &&
+				prevStatus == core.NodeStatus_IDLE &&
+				n.index < childrenCount {
+				n.EmitWakeUpSignal()
+				return core.NodeStatus_RUNNING
 			}
-			break
-
 		case core.NodeStatus_SKIPPED:
-			{
-				// It was requested to skip this node
-				n.index++
-			}
-			break
 
+			// It was requested to skip this node
+			n.index++
 		case core.NodeStatus_IDLE:
-			{
-				panic(fmt.Sprintf("[%v]: A children should not return IDL", n.Name()))
-			}
+			panic(fmt.Sprintf("[%v]: A children should not return IDL", n.Name()))
 		} // end switch
 	} // end while loop
 
 	// The entire while loop completed. This means that all the children returned SUCCESS.
-	if n.index == children_count {
+	if n.index == childrenCount {
 		n.ResetChildren()
 		n.index = 0
 	}

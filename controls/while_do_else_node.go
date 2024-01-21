@@ -6,8 +6,12 @@ type WhileDoElseNode struct {
 	*core.ControlNode
 }
 
-func NewWhileDoElseNode() *WhileDoElseNode {
-	return &WhileDoElseNode{}
+func NewWhileDoElseNode(name string, cfg *core.NodeConfig, args ...interface{}) core.ITreeNode {
+	n := &WhileDoElseNode{
+		ControlNode: core.NewControlNode(name, cfg),
+	}
+	n.SetRegistrationID("WhileDoElse")
+	return n
 }
 
 func (n *WhileDoElseNode) Tick() core.NodeStatus {

@@ -7,28 +7,30 @@ import (
 )
 
 type Blackboard struct {
-	mutex_                sync.Mutex
-	recursive_mutex       sync.Mutex
-	storage_              map[string]*Entry
-	parent_bb_            *Blackboard
-	internal_to_external_ map[string]string
-	autoremapping_        bool
+	mutex_             sync.Mutex
+	recursiveMutex     sync.Mutex
+	storage            map[string]*Entry
+	parentBb           *Blackboard
+	internalToExternal map[string]string
+	automapping        bool
 }
 
-func NewBlackboard() *Blackboard {
+func NewBlackboard(parent *Blackboard) *Blackboard {
 	return &Blackboard{
-		internal_to_external_: map[string]string{},
-		storage_:              map[string]*Entry{},
+		internalToExternal: map[string]string{},
+		storage:            map[string]*Entry{},
+		parentBb:           parent,
 	}
 }
 
 type Entry struct {
-	Value any
+	entryMutex sync.Mutex
+	Value      any
 }
 
 func (n *Blackboard) Clear() {
 	n.mutex_.Lock()
-	n.storage_ = map[string]*Entry{}
+	n.storage = map[string]*Entry{}
 	n.mutex_.Unlock()
 }
 
@@ -37,10 +39,10 @@ func IsPrivateKey(str string) bool {
 }
 
 func (n *Blackboard) enableAutoRemapping(remapping bool) {
-	n.autoremapping_ = remapping
+	n.automapping = remapping
 }
 func (n *Blackboard) Get(key string) any {
-	if any_ref := n.getAnyLocked(key); any_ref != nil {
+	if any_ref := n.GetAnyLocked(key); any_ref != nil {
 		a := any_ref()
 		if a == nil {
 			panic(fmt.Sprintf("Blackboard::get() error. Entry [%v] hasn't been initialized, yet", key))
@@ -54,14 +56,10 @@ func (n *Blackboard) Get(key string) any {
 func (n *Blackboard) Unset(key string) {
 	n.mutex_.Lock()
 	defer n.mutex_.Unlock()
-	_, ok := n.storage_[key]
-	if !ok {
-		return
-	}
-	delete(n.storage_, key)
+	delete(n.storage, key)
 }
 
-func (n *Blackboard) getAnyLocked(key string) func() *Entry {
+func (n *Blackboard) GetAnyLocked(key string) func() *Entry {
 	return func() (entry *Entry) {
 		n.mutex_.Lock()
 		entry = n.GetEntry(key)
@@ -71,25 +69,25 @@ func (n *Blackboard) getAnyLocked(key string) func() *Entry {
 }
 
 func (n *Blackboard) AddSubtreeRemapping(internal, external string) {
-	n.internal_to_external_[internal] = external
+	n.internalToExternal[internal] = external
 }
 
 func (n *Blackboard) DebugMessage() {
-	for key, entry := range n.storage_ {
+	for key, entry := range n.storage {
 		fmt.Printf("%v (%v)", key, reflect.ValueOf(entry.Value).String())
 	}
 
-	for from, to := range n.internal_to_external_ {
+	for from, to := range n.internalToExternal {
 		fmt.Printf("[%v] remapped to port of parent tree [%v]", from, to)
 		continue
 	}
 }
 
 func (n *Blackboard) GetKeys() (res []string) {
-	if len(n.storage_) == 0 {
+	if len(n.storage) == 0 {
 		return
 	}
-	for k := range n.storage_ {
+	for k := range n.storage {
 		res = append(res, k)
 	}
 	return
@@ -98,26 +96,25 @@ func (n *Blackboard) GetKeys() (res []string) {
 func (n *Blackboard) GetEntry(key string) *Entry {
 	n.mutex_.Lock()
 	defer n.mutex_.Unlock()
-	it, ok := n.storage_[key]
+	it, ok := n.storage[key]
 	if ok {
 		return it
 	}
 
 	// not found. Try autoremapping
-	if parent := n.parent_bb_; parent != nil {
-		new_key, ok := n.internal_to_external_[key]
+	if parent := n.parentBb; parent != nil {
+		newKey, ok := n.internalToExternal[key]
 		if ok {
-
-			entry := parent.GetEntry(new_key)
+			entry := parent.GetEntry(newKey)
 			if entry != nil {
-				n.storage_[key] = entry
+				n.storage[key] = entry
 			}
 			return entry
 		}
-		if n.autoremapping_ && !IsPrivateKey(key) {
+		if n.automapping && !IsPrivateKey(key) {
 			entry := parent.GetEntry(key)
 			if entry != nil {
-				n.storage_[key] = entry
+				n.storage[key] = entry
 			}
 			return entry
 		}
@@ -125,18 +122,18 @@ func (n *Blackboard) GetEntry(key string) *Entry {
 	return nil
 }
 
-func (n *Blackboard) CreateEntry(key string) *Entry {
-	return n.createEntryImpl(key)
+func (n *Blackboard) CreateEntry(key string, info *PortInfo) *Entry {
+	return n.createEntryImpl(key, info)
 }
 
-func (n *Blackboard) createEntryImpl(key string) *Entry {
+func (n *Blackboard) createEntryImpl(key string, info *PortInfo) *Entry {
 	n.mutex_.Lock()
 	defer n.mutex_.Unlock()
 	// This function might be called recursively, when we do remapping, because we move
 	// to the top scope to find already existing  entries
 
 	// search if exists already
-	storageIt, ok := n.storage_[key]
+	storageIt, ok := n.storage[key]
 	if ok {
 		return storageIt
 	}
@@ -144,16 +141,74 @@ func (n *Blackboard) createEntryImpl(key string) *Entry {
 	var entry *Entry
 
 	// manual remapping first
-	remappedKey, ok := n.internal_to_external_[key]
+	remappedKey, ok := n.internalToExternal[key]
 	if ok {
-		if n.parent_bb_ != nil {
-			entry = n.parent_bb_.createEntryImpl(remappedKey)
+		if n.parentBb != nil {
+			entry = n.parentBb.createEntryImpl(remappedKey, info)
 		}
-	} else if n.autoremapping_ && !IsPrivateKey(key) {
-		if n.parent_bb_ != nil {
-			entry = n.parent_bb_.createEntryImpl(key)
+	} else if n.automapping && !IsPrivateKey(key) {
+		if n.parentBb != nil {
+			entry = n.parentBb.createEntryImpl(key, info)
+		}
+	} else {
+		// not remapped, not found. Create locally.
+		entry = &Entry{}
+		// even if empty, let's assign to it a default type
+		entry.Value = info.defaultValue
+
+	}
+
+	n.storage[key] = entry
+	return entry
+}
+
+func (n *Blackboard) Set(key string, value any) {
+	n.mutex_.Lock()
+	defer n.mutex_.Unlock()
+	entry, ok := n.storage[key]
+	if !ok {
+		n.mutex_.Unlock()
+		// if a new generic port is created with a string, it's type should be AnyTypeAllowed
+		s, ok := value.(string)
+		p := NewPortInfo(PortDirection_INOUT, "")
+		p.defaultValueStr = s
+		if ok {
+			entry = n.createEntryImpl(key, p)
+		} else {
+			p.SetDefaultValue(value)
+			entry = n.createEntryImpl(key, p)
+		}
+		n.mutex_.Lock()
+		n.storage[key] = entry
+		entry.Value = value
+	} else {
+		// this is not the first time we set this entry, we need to check
+		// if the type is the same or not.
+
+		entry.entryMutex.Lock()
+		defer entry.entryMutex.Unlock()
+		if entry == nil || reflect.TypeOf(entry.Value) == nil {
+			entry.Value = value
+			entry.entryMutex.Unlock()
+			return
+		}
+
+		previousType := reflect.TypeOf(entry.Value)
+
+		// check type mismatch
+		if previousType != reflect.TypeOf(value) {
+			mismatching := true
+			if v, ok := value.(fmt.Stringer); ok {
+				anyFromString := v.String()
+				if anyFromString != "" {
+					mismatching = false
+					entry.Value = anyFromString
+				}
+			}
+			if mismatching {
+				n.DebugMessage()
+				panic(fmt.Sprintf("Blackboard::set(%v", key, "): once declared, the type of a port shall not change. Previously declared type [, reflect.TypeOf(previous_type),], current type [", "]"))
+			}
 		}
 	}
-	n.storage_[key] = entry
-	return entry
 }

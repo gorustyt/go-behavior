@@ -1,14 +1,52 @@
 package core
 
 import (
+	"container/list"
 	"errors"
 	"fmt"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 func IsAlpha(c uint8) bool {
 	return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
+}
+
+type ProtectedQueue struct {
+	Items list.List
+	Mtx   sync.Mutex
+}
+type IMetadata interface {
+	Metadata() [][]string
+}
+
+type IGetProvidedPorts interface {
+	GetProvidedPorts() map[string]*PortInfo
+}
+type PostTickCallback func(node *TreeNode, status NodeStatus) NodeStatus
+type PreTickCallback func(node *TreeNode) NodeStatus
+type ScriptFunction func(args ...interface{}) bool
+type TickFunctor func(node ITreeNode, status ...NodeStatus) NodeStatus
+type INodeType interface {
+	NodeType() NodeType
+}
+
+type ITreeNode interface {
+	Tick() NodeStatus
+	Config() *NodeConfig
+	PreConditionsScripts() []ScriptFunction
+	PostConditionsScripts() []ScriptFunction
+	SetRegistrationID(ID string)
+
+	NodeType() NodeType
+	UID() uint16
+	HaltNode()
+
+	SetWakeUpInstance(instance *WakeUpSignal)
+	ExecuteTick() NodeStatus
+	ResetStatus()
+	Status() NodeStatus
 }
 
 func IsAllowedPortName(str string) bool {
@@ -27,7 +65,9 @@ func IsAllowedPortName(str string) bool {
 	}
 	return true
 }
-
+func IsStatusCompleted(status NodeStatus) bool {
+	return status == NodeStatus_SUCCESS || status == NodeStatus_FAILURE
+}
 func ConvFromString(str string, value any) error {
 	switch v := value.(type) {
 	case *int:
@@ -192,4 +232,8 @@ func convertFloat64FromString(str string) (res float64, err error) {
 
 func convertInt64FromString(str string) (res int64, err error) {
 	return strconv.ParseInt(str, 10, 64)
+}
+
+func ParseScript(s string) (ScriptFunction, error) {
+	return nil, nil
 }

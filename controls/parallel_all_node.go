@@ -5,6 +5,12 @@ import (
 	"github.com/gorustyt/go-behavior/core"
 )
 
+func init() {
+	core.SetPorts(&ParallelAllNode{},
+		core.InputPortWithDefaultValue("max_failures", 1,
+			"If the number of children returning FAILURE exceeds this value, ParallelAll returns FAILURE"))
+}
+
 type ParallelAllNode struct {
 	*core.ControlNode
 	failure_threshold_ int
@@ -12,7 +18,7 @@ type ParallelAllNode struct {
 	failure_count_     int
 }
 
-func NewParallelAllNode(name string, cfg *core.NodeConfig) *ParallelAllNode {
+func NewParallelAllNode(name string, cfg *core.NodeConfig, args ...interface{}) core.ITreeNode {
 	return &ParallelAllNode{
 		ControlNode:        core.NewControlNode(name, cfg),
 		completed_list_:    map[int]struct{}{},
@@ -20,34 +26,34 @@ func NewParallelAllNode(name string, cfg *core.NodeConfig) *ParallelAllNode {
 	}
 }
 func (n *ParallelAllNode) tick() core.NodeStatus {
-	max_failures := 0
-	v, err := n.GetInput("max_failures")
-	max_failures = v.(int)
+	maxFailures := 0
+	v, err := n.GetInput("max_failures", &maxFailures)
+	maxFailures = v.(int)
 	if err != nil {
 		panic(fmt.Sprintf("Missing parameter [max_failures] in ParallelNode%v", err))
 	}
-	children_count := len(n.Children)
-	n.setFailureThreshold(max_failures)
+	childrenCount := len(n.Children)
+	n.setFailureThreshold(maxFailures)
 
-	skipped_count := 0
+	skippedCount := 0
 
-	if children_count < n.failure_threshold_ {
+	if childrenCount < n.failure_threshold_ {
 		panic("Number of children is less than threshold. Can never fail.")
 	}
 
 	n.SetStatus(core.NodeStatus_RUNNING)
 
 	// Routing the tree according to the sequence node's logic:
-	for index := 0; index < children_count; index++ {
-		child_node := n.Children[index]
+	for index := 0; index < childrenCount; index++ {
+		childNode := n.Children[index]
 
 		// already completed
 		if _, ok := n.completed_list_[index]; ok {
 			continue
 		}
 
-		child_status := child_node.ExecuteTick()
-		switch child_status {
+		childStatus := childNode.ExecuteTick()
+		switch childStatus {
 		case core.NodeStatus_SUCCESS:
 			n.completed_list_[index] = struct{}{}
 		case core.NodeStatus_FAILURE:
@@ -56,16 +62,16 @@ func (n *ParallelAllNode) tick() core.NodeStatus {
 		case core.NodeStatus_RUNNING:
 			// Still working. Check the next
 		case core.NodeStatus_SKIPPED:
-			skipped_count++
+			skippedCount++
 		case core.NodeStatus_IDLE:
 			panic(fmt.Sprintf("[%v]: A children should not return IDLE", n.Name()))
 		}
 	}
 
-	if skipped_count == children_count {
+	if skippedCount == childrenCount {
 		return core.NodeStatus_SKIPPED
 	}
-	if skipped_count+len(n.completed_list_) >= children_count {
+	if skippedCount+len(n.completed_list_) >= childrenCount {
 		// DONE
 		n.HaltChildren()
 		n.completed_list_ = map[int]struct{}{}

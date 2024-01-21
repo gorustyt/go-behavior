@@ -7,8 +7,10 @@ type IfThenElseNode struct {
 	index int
 }
 
-func NewIfThenElseNode() *IfThenElseNode {
-	return &IfThenElseNode{}
+func NewIfThenElseNode(name string, cfg *core.NodeConfig, args ...interface{}) core.ITreeNode {
+	n := &IfThenElseNode{ControlNode: core.NewControlNode(name, cfg)}
+	n.SetRegistrationID("IfThenElse")
+	return n
 }
 
 func (n *IfThenElseNode) halt() {
@@ -17,26 +19,26 @@ func (n *IfThenElseNode) halt() {
 }
 
 func (n *IfThenElseNode) Tick() core.NodeStatus {
-	children_count := len(n.Children)
+	childrenCount := len(n.Children)
 
-	if children_count != 2 && children_count != 3 {
+	if childrenCount != 2 && childrenCount != 3 {
 		panic("IfThenElseNode must have either 2 or 3 children")
 	}
 
 	n.SetStatus(core.NodeStatus_RUNNING)
 
 	if n.index == 0 {
-		condition_status := n.Children[0].ExecuteTick()
+		conditionStatus := n.Children[0].ExecuteTick()
 
-		if condition_status == core.NodeStatus_RUNNING {
-			return condition_status
-		} else if condition_status == core.NodeStatus_SUCCESS {
+		if conditionStatus == core.NodeStatus_RUNNING {
+			return conditionStatus
+		} else if conditionStatus == core.NodeStatus_SUCCESS {
 			n.index = 1
-		} else if condition_status == core.NodeStatus_FAILURE {
-			if children_count == 3 {
+		} else if conditionStatus == core.NodeStatus_FAILURE {
+			if childrenCount == 3 {
 				n.index = 2
 			} else {
-				return condition_status
+				return conditionStatus
 			}
 		}
 	}

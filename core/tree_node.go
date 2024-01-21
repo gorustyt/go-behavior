@@ -233,9 +233,22 @@ func BidirectionalPortWithDefaultValue(name string, defaultValue any, desc ...st
 
 type TreeNodeManifest struct {
 	Type           NodeType
-	registrationID string
-	ports          map[string]*PortInfo
-	metadata       []map[string]string
+	RegistrationID string
+	Ports          map[string]*PortInfo
+	Metadata       []map[string]string
+}
+
+func NewTreeNodeManifest(value any) *TreeNodeManifest {
+	v := &TreeNodeManifest{
+		Ports:    map[string]*PortInfo{},
+		Metadata: make([]map[string]string, 0),
+		Type:     NodeType_UNDEFINED,
+	}
+	t, ok := value.(INodeType)
+	if ok {
+		v.Type = t.NodeType()
+	}
+	return v
 }
 
 var (
@@ -243,32 +256,32 @@ var (
 )
 
 type NodeConfig struct {
-	blackboard     *Blackboard
-	enums          map[string]int
-	inputPorts     map[string]string
-	outputPorts    map[string]string
-	manifest       *TreeNodeManifest
-	uid            uint16
-	path           string
-	preConditions  map[PreCond]string  //有序
-	postConditions map[PostCond]string //有序
+	Blackboard     *Blackboard
+	Enums          map[string]int
+	InputPorts     map[string]string
+	OutputPorts    map[string]string
+	Manifest       *TreeNodeManifest
+	Uid            uint16
+	Path           string
+	PreConditions  map[PreCond]string  //有序
+	PostConditions map[PostCond]string //有序
+
 }
 
-type StatusChangeEvent struct {
-	Pre NodeStatus
-	Now NodeStatus
-}
 type TreeNode struct {
 	name                   string
 	status                 NodeStatus
 	mutex                  *sync.Mutex
 	callbackInjectionMutex *sync.Mutex
 	config                 *NodeConfig
-	substitutionCallback   func(node *TreeNode) NodeStatus
-	postConditionCallback  func(node *TreeNode, status NodeStatus) NodeStatus
+	substitutionCallback   PreTickCallback
+	postConditionCallback  PostTickCallback
 	cond                   *sync.Cond
-	statusCh               chan *StatusChangeEvent
+	wake_up                *WakeUpSignal
 	registrationID         string
+	pre_parsed             []ScriptFunction
+	post_parsed            []ScriptFunction
+	state_change_signal    *Signal
 }
 
 func NewTreeNode(name string, cfg *NodeConfig) *TreeNode {
@@ -278,8 +291,10 @@ func NewTreeNode(name string, cfg *NodeConfig) *TreeNode {
 		mutex:                  mu,
 		config:                 cfg,
 		name:                   name,
+		pre_parsed:             make([]ScriptFunction, PreCond_COUNT_),
+		post_parsed:            make([]ScriptFunction, PostCond_COUNT_),
 		cond:                   sync.NewCond(mu),
-		statusCh:               make(chan *StatusChangeEvent, 1),
+		state_change_signal:    NewSignal(),
 	}
 }
 
@@ -293,36 +308,168 @@ func (n *TreeNode) SetStatus(status NodeStatus) {
 	n.mutex.Unlock()
 	if prev_status != status {
 		n.cond.Broadcast()
-		n.statusCh <- &StatusChangeEvent{Pre: prev_status, Now: status}
+		n.state_change_signal.Notify(prev_status, status)
 	}
 }
 
-func (n *TreeNode) ExecuteTick() NodeStatus {
+func (n *TreeNode) EmitWakeUpSignal() {
+	if n.wake_up != nil {
+		n.wake_up.EmitSignal()
+	}
+}
 
+func (n *TreeNode) RequiresWakeUp() bool {
+	return n.wake_up != nil
+}
+func (n *TreeNode) Tick() NodeStatus {
+	panic("not ok")
+	return NodeStatus_RUNNING
+}
+func (n *TreeNode) ExecuteTick() NodeStatus {
+	new_status := n.status
+
+	// a pre-condition may return the new status.
+	// In this case it override the actual tick()
+	if precond, err := n.checkPreConditions(); err == nil {
+		new_status = precond
+	} else {
+		// injected pre-callback
+		substituted := false
+		if !IsStatusCompleted(n.status) {
+			var callback PreTickCallback
+			n.callbackInjectionMutex.Lock()
+			callback = n.substitutionCallback
+			n.callbackInjectionMutex.Unlock()
+			if callback != nil {
+				override_status := callback(n)
+				if IsStatusCompleted(override_status) {
+					// don't execute the actual tick()
+					substituted = true
+					new_status = override_status
+				}
+			}
+		}
+
+		// Call the ACTUAL tick
+		if !substituted {
+			new_status = n.Tick()
+		}
+	}
+
+	n.checkPostConditions(new_status)
+
+	// injected post callback
+	if IsStatusCompleted(new_status) {
+		var callback PostTickCallback
+		n.callbackInjectionMutex.Lock()
+		callback = n.postConditionCallback
+		n.callbackInjectionMutex.Unlock()
+
+		if callback != nil {
+			override_status := callback(n, new_status)
+			if IsStatusCompleted(override_status) {
+				new_status = override_status
+			}
+		}
+	}
+
+	// preserve the IDLE state if skipped, but communicate SKIPPED to parent
+	if new_status != NodeStatus_SKIPPED {
+		n.SetStatus(new_status)
+	}
+	return new_status
 }
 func (n *TreeNode) Status() NodeStatus {
-	var prev_status NodeStatus
+	var prevStatus NodeStatus
 	n.mutex.Lock()
-	prev_status = n.status
+	prevStatus = n.status
 	n.mutex.Unlock()
-	return prev_status
+	return prevStatus
+}
+
+func (n *TreeNode) SetWakeUpInstance(instance *WakeUpSignal) {
+	n.wake_up = instance
+}
+
+// / The method used to interrupt the execution of a RUNNING node.
+// / Only Async nodes that may return RUNNING should implement it.
+func (n *TreeNode) Halt() {
+
 }
 func (n *TreeNode) HaltNode() {
-
+	n.Halt()
+	ex := n.post_parsed[PostCond_ON_HALTED]
+	if ex != nil {
+		ex(n.Config().Blackboard, n.Config().Enums)
+	}
 }
-func (n *TreeNode) Type() {
 
+func (n *TreeNode) PreConditionsScripts() []ScriptFunction {
+	return n.pre_parsed
 }
+
+func (n *TreeNode) SetRegistrationID(ID string) {
+	n.registrationID = ID
+}
+func (n *TreeNode) PostConditionsScripts() []ScriptFunction {
+	return n.post_parsed
+}
+
 func (n *TreeNode) Name() string {
 	return n.name
 }
-
-func (n *TreeNode) checkPreConditions() error {
-	return errors.New("")
+func (n *TreeNode) UID() uint16 {
+	return n.config.Uid
+}
+func (n *TreeNode) checkPreConditions() (NodeStatus, error) {
+	// check the pre-conditions
+	for index := 0; index < int(PreCond_COUNT_); index++ {
+		parse_executor := n.pre_parsed[index]
+		if parse_executor == nil {
+			continue
+		}
+		args := []interface{}{n.Config().Blackboard, n.Config().Enums}
+		preID := PreCond(index)
+		// Some preconditions are applied only when the node state is IDLE or SKIPPED
+		if n.status == NodeStatus_IDLE ||
+			n.status == NodeStatus_SKIPPED {
+			// what to do if the condition is true
+			if parse_executor(args...) {
+				if preID == PreCond_FAILURE_IF {
+					return NodeStatus_FAILURE, nil
+				} else if preID == PreCond_SUCCESS_IF {
+					return NodeStatus_SUCCESS, nil
+				} else if preID == PreCond_SKIP_IF {
+					return NodeStatus_SKIPPED, nil
+				}
+			} else if preID == PreCond_WHILE_TRUE { // if the conditions is false
+				return NodeStatus_SKIPPED, nil
+			}
+		} else if n.status == NodeStatus_RUNNING && preID == PreCond_WHILE_TRUE {
+			// what to do if the condition is false
+			if !parse_executor(args...) {
+				n.HaltNode()
+				return NodeStatus_SKIPPED, nil
+			}
+		}
+	}
+	return NodeStatus_FAILURE, errors.New("")
 }
 
-func (n *TreeNode) checkPostConditions() {
+func (n *TreeNode) checkPostConditions(status NodeStatus) {
+	executeScript := func(cond PostCond) {
+		parse_executor := n.post_parsed[cond]
+		if parse_executor != nil {
+			parse_executor(n.Config().Blackboard, n.Config().Enums)
+		}
+	}
 
+	if status == NodeStatus_SUCCESS {
+		executeScript(PostCond_ON_SUCCESS)
+	} else if status == NodeStatus_FAILURE {
+		executeScript(PostCond_ON_FAILURE)
+	}
+	executeScript(PostCond_ALWAYS)
 }
 
 func (n *TreeNode) ResetStatus() {
@@ -332,33 +479,18 @@ func (n *TreeNode) ResetStatus() {
 	n.mutex.Unlock()
 	if prev_status != NodeStatus_IDLE {
 		n.cond.Broadcast()
-		n.statusCh <- &StatusChangeEvent{Pre: prev_status, Now: NodeStatus_IDLE}
+		n.state_change_signal.Notify(prev_status, NodeStatus_IDLE)
 	}
 }
 
 func (n *TreeNode) ModifyPortsRemapping(newRemapping map[string]string) {
 	for k, v := range newRemapping {
-		if _, ok := n.config.inputPorts[k]; ok {
-			n.config.inputPorts[k] = v
+		if _, ok := n.config.InputPorts[k]; ok {
+			n.config.InputPorts[k] = v
 		}
-		if _, ok := n.config.outputPorts[k]; ok {
-			n.config.inputPorts[k] = v
+		if _, ok := n.config.OutputPorts[k]; ok {
+			n.config.InputPorts[k] = v
 		}
-	}
-}
-
-func (n *TreeNode) resetStatus() {
-	var prevStatus NodeStatus
-
-	n.mutex.Lock()
-	prevStatus = n.status
-	n.status = NodeStatus_IDLE
-	n.mutex.Lock()
-
-	if prevStatus != NodeStatus_IDLE {
-		n.cond.Broadcast()
-		n.statusCh.notify(
-			prevStatus, NodeStatus_IDLE)
 	}
 }
 
@@ -375,7 +507,7 @@ func (n *TreeNode) SetPostTickFunction(callback func(node *TreeNode, status Node
 }
 
 func (n *TreeNode) FullPath() string {
-	return n.config.path
+	return n.config.Path
 }
 
 func (n *TreeNode) registrationName() string {
@@ -386,39 +518,36 @@ func (n *TreeNode) Config() *NodeConfig {
 	return n.config
 }
 
-func (n *TreeNode) SetOutput(key string, value any) (err error) {
-	if n.config.blackboard == nil {
-		return errors.New("setOutput() failed: trying to access a Blackboard(BB) entry, but BB is invalid")
+func (n *TreeNode) SetOutput(key string, value any) {
+	if n.config.Blackboard == nil {
+		panic("setOutput() failed: trying to access a Blackboard(BB) entry, but BB is invalid")
 	}
 
-	remapped_key, ok := n.config.outputPorts[key]
+	remappedKey, ok := n.config.OutputPorts[key]
 	if !ok {
-		return fmt.Errorf("setOutput() failed:  NodeConfig::output_ports does not contain the key: [%v]", key)
+		panic(fmt.Sprintf("setOutput() failed:  NodeConfig::output_ports does not contain the key: [%v]", key))
 	}
-	if remapped_key == "=" {
-		n.config.blackboard.Set(key, value)
-		return nil
+	if remappedKey == "=" {
+		n.config.Blackboard.Set(key, value)
+		return
 	}
 
-	if _, ok = n.IsBlackboardPointer(remapped_key); !ok {
-		return errors.New("setOutput requires a blackboard pointer. Use {}")
+	if _, ok = IsBlackboardPointer(remappedKey); !ok {
+		panic("setOutput requires a blackboard pointer. Use {}")
 	}
 
 	if value == nil {
 		panic("setOutput<Any> is not allowed, unless the port was declared using OutputPort<Any>")
-
 	}
 
-	remapped_key = n.stripBlackboardPointer(remapped_key)
-	n.config.blackboard.Set(remapped_key, value)
-
-	return nil
+	remappedKey = StripBlackboardPointer(remappedKey)
+	n.config.Blackboard.Set(remappedKey, value)
 }
 
 func (n *TreeNode) GetRawPortValue(key string) string {
-	remap, ok := n.config.inputPorts[key]
+	remap, ok := n.config.InputPorts[key]
 	if !ok {
-		remap, ok = n.config.outputPorts[key]
+		remap, ok = n.config.OutputPorts[key]
 		if !ok {
 			panic(fmt.Sprintf("[%v] not found", key))
 		}
@@ -426,7 +555,7 @@ func (n *TreeNode) GetRawPortValue(key string) string {
 	return remap
 }
 
-func (n *TreeNode) IsBlackboardPointer(str string) (res string, ok bool) {
+func IsBlackboardPointer(str string) (res string, ok bool) {
 	if len(str) < 3 {
 		return str, false
 	}
@@ -447,13 +576,9 @@ func (n *TreeNode) IsBlackboardPointer(str string) (res string, ok bool) {
 	return res, valid
 }
 
-func (n *TreeNode) stripBlackboardPointer(str string) string {
-	v, _ := n.IsBlackboardPointer(str)
+func StripBlackboardPointer(str string) string {
+	v, _ := IsBlackboardPointer(str)
 	return v
-}
-
-type IGetProvidedPorts interface {
-	GetProvidedPorts() map[string]*PortInfo
 }
 
 func AssignDefaultRemapping(config *NodeConfig, value IGetProvidedPorts) {
@@ -461,40 +586,43 @@ func AssignDefaultRemapping(config *NodeConfig, value IGetProvidedPorts) {
 		direction := v.Direction()
 		if direction != PortDirection_OUTPUT {
 			// PortDirection::{INPUT,INOUT}
-			config.inputPorts[port_name] = "="
+			config.InputPorts[port_name] = "="
 		}
 		if direction != PortDirection_INPUT {
 			// PortDirection::{OUTPUT,INOUT}
-			config.outputPorts[port_name] = "="
+			config.OutputPorts[port_name] = "="
 		}
 	}
 }
-
-func (n *TreeNode) getRemappedKey(port_name string, remapped_port string) (res string, err error) {
-	if remapped_port == "=" {
-		return port_name, nil
+func (n *TreeNode) GetLockedPortContent(key string) func() *Entry {
+	if remapped_key, err := GetRemappedKey(key, n.GetRawPortValue(key)); err == nil {
+		return n.Config().Blackboard.GetAnyLocked(remapped_key)
 	}
-	stripped, ok := n.IsBlackboardPointer(remapped_port)
+	return nil
+}
+
+func GetRemappedKey(portName string, remappedPort string) (res string, err error) {
+	if remappedPort == "=" {
+		return portName, nil
+	}
+	stripped, ok := IsBlackboardPointer(remappedPort)
 	if ok {
 		return stripped, nil
 	}
-	return res, errors.New("Not a blackboard pointer")
+	return res, errors.New("not a blackboard pointer")
 }
 func (n *TreeNode) GetInput(key string, destination any) (res any, err error) {
-
 	ParseString := func(str string) any {
 		switch destination.(type) {
 		case NodeType, PortDirection:
-			it, ok := n.config.enums[str]
+			it, ok := n.config.Enums[str]
 			if ok {
 				return it
 			}
-		default:
-
 		}
 		return ConvFromString(str, destination)
 	}
-	remap_it, ok := n.config.inputPorts[key]
+	portValueStr, ok := n.config.InputPorts[key]
 	if !ok {
 		return res, fmt.Errorf("getInput() of node `%v` failed because NodeConfig::input_ports does not contain the key: [%v]", n.FullPath(), key)
 	}
@@ -503,43 +631,42 @@ func (n *TreeNode) GetInput(key string, destination any) (res any, err error) {
 	// if available in the model.
 	// BUT, it the port type is a string, then an empty string might be
 	// a valid value
-	port_value_str := remap_it
-	if port_value_str == "" && n.config.manifest != nil {
-		port_manifest := n.config.manifest.ports[key]
-		default_value := port_manifest.DefaultValue()
-		_, ok := default_value.(string)
-		if default_value != nil && !ok {
-			destination = default_value
+	if portValueStr == "" && n.config.Manifest != nil {
+		portManifest := n.config.Manifest.Ports[key]
+		defaultValue := portManifest.DefaultValue()
+		_, ok := defaultValue.(string)
+		if defaultValue != nil && !ok {
+			destination = defaultValue
 			return destination, nil
 		}
 	}
 
-	remapped_res, err := n.getRemappedKey(key, port_value_str)
+	remappedRes, err := GetRemappedKey(key, portValueStr)
 	if err != nil {
 		return res, err
 	}
 	// pure string, not a blackboard key
-	if remapped_res != "" {
-		destination = ParseString(port_value_str)
+	if remappedRes != "" {
+		destination = ParseString(portValueStr)
 		return res, nil
 	}
-	remapped_key := remapped_res
+	remappedKey := remappedRes
 
-	if n.config.blackboard == nil {
+	if n.config.Blackboard == nil {
 		return res, fmt.Errorf("getInput(): trying to access an invalid Blackboard")
 	}
 
-	if any_ref := n.config.blackboard.getAnyLocked(remapped_key); any_ref != nil {
-		val := any_ref()
+	if anyRef := n.config.Blackboard.GetAnyLocked(remappedKey); anyRef != nil {
+		val := anyRef()
 		v, ok := val.Value.(string)
 		if ok {
 			destination = ParseString(v)
 		} else {
-			return val, nil
+			return destination, nil
 		}
 	}
 
 	return res, fmt.Errorf("getInput() failed because it was unable to find the key [%v] remapped to [%v]", key,
-		remapped_key)
+		remappedKey)
 
 }

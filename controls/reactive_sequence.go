@@ -11,8 +11,9 @@ type ReactiveSequence struct {
 	throwIfMultipleRunning bool
 }
 
-func NewReactiveSequence() *ReactiveSequence {
+func NewReactiveSequence(name string, cfg *core.NodeConfig, args ...interface{}) core.ITreeNode {
 	return &ReactiveSequence{
+		ControlNode:            core.NewControlNode(name, cfg),
 		runningChild:           -1,
 		throwIfMultipleRunning: true,
 	}
@@ -23,20 +24,20 @@ func (n *ReactiveSequence) EnableException(enable bool) {
 }
 
 func (n *ReactiveSequence) Tick() core.NodeStatus {
-	all_skipped := true
+	allSkipped := true
 	if n.Status() == core.NodeStatus_IDLE {
 		n.runningChild = -1
 	}
 	n.SetStatus(core.NodeStatus_RUNNING)
 
 	for index := 0; index < len(n.Children); index++ {
-		current_child_node := n.Children[index]
-		child_status := current_child_node.ExecuteTick()
+		currentChildNode := n.Children[index]
+		childStatus := currentChildNode.ExecuteTick()
 
 		// switch to RUNNING state as soon as you find an active child
-		all_skipped = child_status == core.NodeStatus_SKIPPED
+		allSkipped = allSkipped && childStatus == core.NodeStatus_SKIPPED
 
-		switch child_status {
+		switch childStatus {
 		case core.NodeStatus_RUNNING:
 			// reset the previous children, to make sure that they are
 			// in IDLE state the next time we tick them
@@ -72,7 +73,7 @@ func (n *ReactiveSequence) Tick() core.NodeStatus {
 	} //end for
 
 	n.ResetChildren()
-	if all_skipped {
+	if allSkipped {
 		return core.NodeStatus_SKIPPED
 	}
 	// Skip if ALL the nodes have been skipped

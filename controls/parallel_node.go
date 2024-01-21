@@ -5,6 +5,14 @@ import (
 	"github.com/gorustyt/go-behavior/core"
 )
 
+func init() {
+	core.SetPorts(&ParallelNode{}, core.InputPortWithDefaultValue(THRESHOLD_SUCCESS, -1,
+		"number of children that need to succeed to trigger a SUCCESS"))
+
+	core.SetPorts(core.InputPortWithDefaultValue(THRESHOLD_FAILURE, 1,
+		"number of children that need to fail to trigger a FAILURE"))
+}
+
 const (
 	THRESHOLD_SUCCESS = "success_count"
 	THRESHOLD_FAILURE = "failure_count"
@@ -16,90 +24,83 @@ type ParallelNode struct {
 	success_threshold_ int
 	failure_threshold_ int
 
-	completed_list_ map[int]struct{}
+	completedList map[int]struct{}
 
-	success_count_ int
-	failure_count_ int
+	successCount int
+	failureCount int
 
-	read_parameter_from_ports_ bool
+	readParameterFromPorts bool
 }
 
-func NewParallelNodeWithName(name string) *ParallelNode {
+func NewParallelNodeWithName(name string, cfg *core.NodeConfig, args ...interface{}) core.ITreeNode {
+	n := &ParallelNode{
+		ControlNode:            core.NewControlNode(name, core.DefaultNodeConfig),
+		completedList:          map[int]struct{}{},
+		success_threshold_:     -1,
+		failure_threshold_:     1,
+		readParameterFromPorts: true,
+	}
+	if cfg == nil {
+		n.SetRegistrationID("Parallel")
+		n.readParameterFromPorts = false
+	}
+	return n
+}
+
+func NewParallelNode(name string, cfg *core.NodeConfig, args ...interface{}) core.ITreeNode {
 	return &ParallelNode{
-		ControlNode:                core.NewControlNode(name, core.DefaultNodeConfig),
-		completed_list_:            map[int]struct{}{},
-		success_threshold_:         -1,
-		failure_threshold_:         1,
-		read_parameter_from_ports_: false,
+		ControlNode:            core.NewControlNode(name, cfg),
+		completedList:          map[int]struct{}{},
+		success_threshold_:     -1,
+		failure_threshold_:     1,
+		readParameterFromPorts: true,
 	}
 }
 
-func NewParallelNode(name string, cfg *core.NodeConfig) *ParallelNode {
-	return &ParallelNode{
-		ControlNode:                core.NewControlNode(name, cfg),
-		completed_list_:            map[int]struct{}{},
-		success_threshold_:         -1,
-		failure_threshold_:         1,
-		read_parameter_from_ports_: true,
-	}
-}
 func (n *ParallelNode) Tick() core.NodeStatus {
-	if n.read_parameter_from_ports_ {
-		v, err := n.GetInput(THRESHOLD_SUCCESS)
+	if n.readParameterFromPorts {
+		v, err := n.GetInput(THRESHOLD_SUCCESS, 0)
 		n.success_threshold_ = v.(int)
 		if err != nil {
 			panic(fmt.Sprintf("Missing parameter [%v] in ParallelNode err:%v", THRESHOLD_SUCCESS, err))
 		}
-		v, err = n.GetInput(THRESHOLD_FAILURE)
+		v, err = n.GetInput(THRESHOLD_FAILURE, 0)
 		n.failure_threshold_ = v.(int)
 		if err != nil {
 			panic(fmt.Sprintf("Missing parameter [%v] in ParallelNode :%v", THRESHOLD_FAILURE, err))
 		}
 	}
 
-	children_count := len(n.Children)
+	childrenCount := len(n.Children)
 
-	if children_count < n.successThreshold() {
+	if childrenCount < n.successThreshold() {
 		panic("Number of children is less than threshold. Can never succeed.")
 	}
 
-	if children_count < n.failureThreshold() {
+	if childrenCount < n.failureThreshold() {
 		panic("Number of children is less than threshold. Can never fail.")
 	}
 
 	n.SetStatus(core.NodeStatus_RUNNING)
 
-	skipped_count := 0
+	skippedCount := 0
 
 	// Routing the tree according to the sequence node's logic:
-	for i := 0; i < children_count; i++ {
-		if len(n.completed_list_) == 0 {
-			child_node := n.Children[i]
-			child_status := child_node.ExecuteTick()
-
-			switch child_status {
+	for i := 0; i < childrenCount; i++ {
+		if len(n.completedList) == 0 {
+			childNode := n.Children[i]
+			childStatus := childNode.ExecuteTick()
+			switch childStatus {
 			case core.NodeStatus_SKIPPED:
-				{
-					skipped_count++
-				}
-
+				skippedCount++
 			case core.NodeStatus_SUCCESS:
-				{
-					n.completed_list_[i] = struct{}{}
-					n.success_count_++
-				}
-
+				n.completedList[i] = struct{}{}
+				n.successCount++
 			case core.NodeStatus_FAILURE:
-				{
-					n.completed_list_[i] = struct{}{}
-					n.failure_count_++
-				}
-
+				n.completedList[i] = struct{}{}
+				n.failureCount++
 			case core.NodeStatus_RUNNING:
-				{
-					// Still working. Check the next
-				}
-
+				// Still working. Check the next
 			case core.NodeStatus_IDLE:
 				{
 					panic(fmt.Sprintf("[%v]: A children should not return IDLE", n.Name()))
@@ -107,10 +108,10 @@ func (n *ParallelNode) Tick() core.NodeStatus {
 			}
 		}
 
-		required_success_count := n.successThreshold()
+		requiredSuccessCount := n.successThreshold()
 
-		if n.success_count_ >= required_success_count ||
-			(n.success_threshold_ < 0 && (n.success_count_+skipped_count) >= required_success_count) {
+		if n.successCount >= requiredSuccessCount ||
+			(n.success_threshold_ < 0 && (n.successCount+skippedCount) >= requiredSuccessCount) {
 			n.clear()
 			n.ResetChildren()
 			return core.NodeStatus_SUCCESS
@@ -118,14 +119,14 @@ func (n *ParallelNode) Tick() core.NodeStatus {
 
 		// It fails if it is not possible to succeed anymore or if
 		// number of failures are equal to failure_threshold_
-		if ((children_count - n.failure_count_) < required_success_count) ||
-			(n.failure_count_ == n.failureThreshold()) {
+		if ((childrenCount - n.failureCount) < requiredSuccessCount) ||
+			(n.failureCount == n.failureThreshold()) {
 			n.clear()
 			n.ResetChildren()
 			return core.NodeStatus_FAILURE
 		}
 	}
-	if skipped_count == children_count {
+	if skippedCount == childrenCount {
 		return core.NodeStatus_SKIPPED
 	}
 	// Skip if ALL the nodes have been skipped
@@ -133,9 +134,9 @@ func (n *ParallelNode) Tick() core.NodeStatus {
 }
 
 func (n *ParallelNode) clear() {
-	n.completed_list_ = map[int]struct{}{}
-	n.success_count_ = 0
-	n.failure_count_ = 0
+	n.completedList = map[int]struct{}{}
+	n.successCount = 0
+	n.failureCount = 0
 }
 
 func (n *ParallelNode) Halt() {
@@ -145,7 +146,7 @@ func (n *ParallelNode) Halt() {
 
 func (n *ParallelNode) successThreshold() int {
 	if n.success_threshold_ < 0 {
-		return max(int(len(n.Children))+n.success_threshold_+1, 0)
+		return max(len(n.Children)+n.success_threshold_+1, 0)
 	} else {
 		return n.success_threshold_
 	}
@@ -153,7 +154,7 @@ func (n *ParallelNode) successThreshold() int {
 
 func (n *ParallelNode) failureThreshold() int {
 	if n.failure_threshold_ < 0 {
-		return max(int(len(n.Children))+n.failure_threshold_+1, 0)
+		return max(len(n.Children)+n.failure_threshold_+1, 0)
 	} else {
 		return n.failure_threshold_
 	}
