@@ -35,6 +35,25 @@ func (t *Tree) Root() ITreeNode {
 	return subtreeNodes[0]
 }
 
+func (t *Tree) TickOnce() NodeStatus {
+	return t.tickRoot(ONCE_UNLESS_WOKEN_UP, 0)
+}
+
+func (t *Tree) TickExactlyOnce() NodeStatus {
+	return t.tickRoot(EXACTLY_ONCE, 0)
+}
+
+func (t *Tree) TickWhileRunning(sleepTimes ...time.Duration) NodeStatus {
+	sleepTime := 10 * time.Millisecond
+	if len(sleepTimes) > 0 {
+		sleepTime = sleepTimes[0]
+	}
+	return t.tickRoot(WHILE_RUNNING, sleepTime)
+}
+
+func (t *Tree) TickRoot(opt TickOption, sleepTime time.Duration) NodeStatus {
+	return t.tickRoot(opt, sleepTime)
+}
 func (t *Tree) tickRoot(opt TickOption, sleepTime time.Duration) NodeStatus {
 	root := t.Root()
 	status := NodeStatus_IDLE

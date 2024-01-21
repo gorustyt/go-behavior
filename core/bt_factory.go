@@ -64,22 +64,6 @@ func NewBehaviorTreeFactory() *BehaviorTreeFactory {
 	}
 }
 
-func (f *BehaviorTreeFactory) TickOnce() NodeStatus {
-	return f.tickRoot(ONCE_UNLESS_WOKEN_UP, 0)
-}
-
-func (f *BehaviorTreeFactory) TickExactlyOnce() NodeStatus {
-	return f.tickRoot(EXACTLY_ONCE, 0)
-}
-
-func (f *BehaviorTreeFactory) TickWhileRunning(sleepTime time.Duration) NodeStatus {
-	return f.tickRoot(WHILE_RUNNING, sleepTime)
-}
-
-func (f *BehaviorTreeFactory) tickRoot(opt TickOption, sleepTime time.Duration) NodeStatus {
-	return f.tickRoot(opt, sleepTime)
-}
-
 func (f *BehaviorTreeFactory) RegisterNodeType(id string, cons NodeBuilderFn, args ...any) {
 	b := &NodeBuilder{
 		TreeNodeManifest: NewTreeNodeManifest(cons("", nil, args...)),
@@ -276,17 +260,20 @@ func (f *BehaviorTreeFactory) RegisteredBehaviorTrees() []string {
 
 func (f *BehaviorTreeFactory) RegisterSimpleCondition(
 	ID string, tickFunctor TickFunctor,
-	ports map[string]*PortInfo) {
+	ports ...*PortInfo) {
+	SetPorts(nil, ports...)
 	f.RegisterNodeType(ID, NewSimpleConditionNode, tickFunctor)
 }
 
 func (f *BehaviorTreeFactory) RegisterSimpleAction(ID string, tickFunctor TickFunctor,
-	ports map[string]*PortInfo) {
+	ports ...*PortInfo) {
+	SetPorts(nil, ports...)
 	f.RegisterNodeType(ID, NewSimpleActionNode, tickFunctor)
 }
 
 func (f *BehaviorTreeFactory) RegisterSimpleDecorator(
 	ID string, tickFunctor TickFunctor,
-	ports map[string]*PortInfo) {
+	ports ...*PortInfo) {
+	SetPorts(nil, ports...)
 	f.RegisterNodeType(ID, NewSimpleDecoratorNode, tickFunctor)
 }

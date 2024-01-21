@@ -1,6 +1,7 @@
 package core
 
 import (
+	"fmt"
 	"sync"
 	"sync/atomic"
 )
@@ -62,10 +63,6 @@ func (n *SimpleActionNode) Tick() NodeStatus {
 	return status
 }
 
-type ThreadedAction struct {
-	*ActionNodeBase
-}
-
 type IStatefulActionNode interface {
 	OnStart() NodeStatus
 	OnRunning() NodeStatus
@@ -114,6 +111,55 @@ func (n *StatefulActionNode) Halt() {
 	if n.Status() == NodeStatus_RUNNING {
 		n.OnHalted()
 	}
+	n.ResetStatus() // might be redundant
+}
+
+type ThreadedAction struct {
+	*ActionNodeBase
+	//std::exception_ptr exptr_;
+	halt_requested_ atomic.Bool
+	//std::future<void> thread_handle_;
+	mutex_ sync.Mutex
+	wg     sync.WaitGroup
+}
+
+func NewThreadedAction(name string, config *NodeConfig) *ThreadedAction {
+	return &ThreadedAction{ActionNodeBase: NewActionNodeBase(name, config)}
+}
+
+func (n *ThreadedAction) IsHaltRequested() bool {
+	return n.halt_requested_.Load()
+}
+
+// This method spawn a new thread. Do NOT remove the "final" keyword.
+func (n *ThreadedAction) ExecuteTick() NodeStatus {
+
+	//send signal to other thread.
+	// The other thread is in charge for changing the status
+	if n.Status() == NodeStatus_IDLE {
+		n.SetStatus(NodeStatus_RUNNING)
+		n.halt_requested_.Store(false)
+		n.wg.Add(1)
+		go func() {
+			status := n.Tick()
+			if !n.IsHaltRequested() {
+				n.SetStatus(status)
+			}
+			fmt.Printf("\nUncaught exception from tick(): [%v/%v]\n", n.registrationName(), n.Name())
+			// Set the exception pointer and the status atomically.
+			n.mutex_.Lock()
+			defer n.mutex_.Lock()
+			n.SetStatus(NodeStatus_IDLE)
+			n.EmitWakeUpSignal()
+			n.wg.Done()
+		}()
+	}
+	return n.Status()
+}
+
+func (n *ThreadedAction) Halt() {
+	n.halt_requested_.Store(true)
+	n.wg.Wait()
 	n.ResetStatus() // might be redundant
 }
 

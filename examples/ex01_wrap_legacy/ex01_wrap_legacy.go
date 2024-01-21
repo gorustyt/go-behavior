@@ -1,85 +1,80 @@
-package ex01_wrap_legacy
-struct Point3D
-{
-  double x, y, z;
-};
+package main
+
+import (
+	"fmt"
+	"github.com/gorustyt/go-behavior/core"
+	"strings"
+)
+
+type Point3D struct {
+	x, y, z float64
+}
 
 // We want to create an ActionNode that calls the method MyLegacyMoveTo::go
-class MyLegacyMoveTo
-{
-public:
-  bool go(Point3D goal)
-  {
-    printf("Going to: %f %f %f\n", goal.x, goal.y, goal.z);
-    return true;   // true means success in my legacy code
-  }
-};
+type MyLegacyMoveTo struct {
+}
+
+func (n *MyLegacyMoveTo) Go(goal Point3D) bool {
+	fmt.Printf("Going to: %f %f %f\n", goal.x, goal.y, goal.z)
+	return true // true means success in my legacy code
+}
 
 // Similarly to the previous tutorials, we need to implement this parsing method,
 // providing a specialization of BT::convertFromString
-namespace BT
-{
-template <>
-Point3D convertFromString(StringView key)
-{
-  // three real numbers separated by semicolons
-  auto parts = BT::splitString(key, ';');
-  if (parts.size() != 3)
-  {
-    throw RuntimeError("invalid input)");
-  }
-  else
-  {
-    Point3D output;
-    output.x = convertFromString<double>(parts[0]);
-    output.y = convertFromString<double>(parts[1]);
-    output.z = convertFromString<double>(parts[2]);
-    return output;
-  }
+
+func convertFromString(key string) *Point3D {
+	// three real numbers separated by semicolons
+	parts := strings.Split(key, ";")
+	if parts.size() != 3 {
+		panic("invalid input)")
+	} else {
+		var output Point3D
+		output.x = convertFromString < double > (parts[0])
+		output.y = convertFromString < double > (parts[1])
+		output.z = convertFromString < double > (parts[2])
+		return &output
+	}
 }
-}   // namespace BT
 
-// clang-format off
-static const char* xml_text = R"(
-
+var xml_text = `(
  <root BTCPP_format="4">
      <BehaviorTree>
         <MoveTo  goal="-1;3;0.5" />
      </BehaviorTree>
  </root>
- )";
+ )`
 
-// clang-format on
+func main() {
 
-int main()
-{
-  using namespace BT;
+	var move_to MyLegacyMoveTo
 
-  MyLegacyMoveTo move_to;
+	// Here we use a lambda that captures the reference of move_to
+	MoveToWrapperWithLambda := func(parentNode *core.TreeNode, status ...core.NodeStatus) core.NodeStatus {
+		var goal Point3D
+		// thanks to paren_node, you can access easily the input and output ports.
+		parentNode.GetInput("goal", goal)
 
-  // Here we use a lambda that captures the reference of move_to
-  auto MoveToWrapperWithLambda = [&move_to](TreeNode& parent_node) -> NodeStatus {
-    Point3D goal;
-    // thanks to paren_node, you can access easily the input and output ports.
-    parent_node.getInput("goal", goal);
+		res := move_to.Go(goal)
+		if res {
+			return core.NodeStatus_SUCCESS
+		}
+		// convert bool to NodeStatus
+		return core.NodeStatus_FAILURE
+	}
 
-    bool res = move_to.go(goal);
-    // convert bool to NodeStatus
-    return res ? NodeStatus::SUCCESS : NodeStatus::FAILURE;
-  };
+	factory := core.NewBehaviorTreeFactory()
 
-  BehaviorTreeFactory factory;
+	// Register the lambda with BehaviorTreeFactory::registerSimpleAction
 
-  // Register the lambda with BehaviorTreeFactory::registerSimpleAction
+	ports := core.InputPortWithDefaultValue("goal", &Point3D{})
+	factory.RegisterSimpleAction("MoveTo", MoveToWrapperWithLambda, ports)
 
-  PortsList ports = {BT::InputPort<Point3D>("goal")};
-  factory.registerSimpleAction("MoveTo", MoveToWrapperWithLambda, ports);
+	tree, err := factory.CreateTreeFromText(xml_text)
+	if err != nil {
+		panic(err)
+	}
+	tree.TickWhileRunning()
 
-  auto tree = factory.createTreeFromText(xml_text);
-
-  tree.tickWhileRunning();
-
-  return 0;
 }
 
 /* Expected output:

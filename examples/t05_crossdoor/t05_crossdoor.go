@@ -1,5 +1,6 @@
-#include "crossdoor_nodes.h"
-#include "behaviortree_cpp/bt_factory.h"
+package main
+
+import "github.com/gorustyt/go-behavior/core"
 
 /** This is a more complex example that uses Fallback,
  * Decorators and Subtrees
@@ -9,7 +10,7 @@
 
 // clang-format off
 
-static const char* xml_text = R"(
+var  xml_text = `(
 <root BTCPP_format="4">
 
     <BehaviorTree ID="MainTree">
@@ -35,29 +36,32 @@ static const char* xml_text = R"(
     </BehaviorTree>
 
 </root>
- )";
+ )`
 
 // clang-format on
 
-int main()
-{
-  BT::BehaviorTreeFactory factory;
+func main() {
+  var  factory core.BehaviorTreeFactory;
 
-  CrossDoor cross_door;
-  cross_door.registerNodes(factory);
+  var cross_door  CrossDoor ;
+  cross_door.RegisterNodes(factory);
 
   // In this example a single XML contains multiple <BehaviorTree>
   // To determine which one is the "main one", we should first register
   // the XML and then allocate a specific tree, using its ID
 
-  factory.registerBehaviorTreeFromText(xml_text);
-  auto tree = factory.createTree("MainTree");
-
+  err:=factory.RegisterBehaviorTreeFromText(xml_text);
+  if err!=nil{
+      panic(err)
+  }
+  tree ,err:= factory.CreateTree("MainTree");
+    if err!=nil{
+        panic(err)
+    }
   // helper function to print the tree
   BT::printTreeRecursively(tree.rootNode());
 
   // Tick multiple times, until either FAILURE of SUCCESS is returned
-  tree.tickWhileRunning();
+  tree.TickWhileRunning();
 
-  return 0;
 }

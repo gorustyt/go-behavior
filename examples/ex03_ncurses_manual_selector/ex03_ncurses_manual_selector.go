@@ -1,15 +1,11 @@
-#include "behaviortree_cpp/bt_factory.h"
-#include "dummy_nodes.h"
-
-using namespace BT;
+package main
 
 /* Try also
 *      <ManualSelector repeat_last_selection="1">
 *  to see the difference.
 */
 
-// clang-format off
-static const char* xml_text = R"(
+var  xml_text= `(
  <root BTCPP_format="4" >
      <BehaviorTree ID="MainTree">
         <Repeat num_cycles="3">
@@ -23,11 +19,9 @@ static const char* xml_text = R"(
         </Repeat>
      </BehaviorTree>
  </root>
- )";
-// clang-format on
+ )`
 
-int main()
-{
+func main() {
   BehaviorTreeFactory factory;
   factory.registerNodeType<DummyNodes::SaySomething>("SaySomething");
 

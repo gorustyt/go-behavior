@@ -1,9 +1,10 @@
-#include "behaviortree_cpp/bt_factory.h"
+package main
 
-#include "dummy_nodes.h"
-#include "movebase_node.h"
-
-using namespace BT;
+import (
+    "fmt"
+    "github.com/gorustyt/go-behavior/core"
+    "time"
+)
 
 /** This tutorial will teach you:
  *
@@ -14,7 +15,7 @@ using namespace BT;
 
 // clang-format off
 
-static const char* xml_text_sequence = R"(
+var  xml_text_sequence = `(
 
  <root BTCPP_format="4" >
 
@@ -28,9 +29,9 @@ static const char* xml_text_sequence = R"(
      </BehaviorTree>
 
  </root>
- )";
+ )`
 
-static const char* xml_text_reactive = R"(
+var  xml_text_reactive = `(
 
  <root BTCPP_format="4" >
 
@@ -46,19 +47,15 @@ static const char* xml_text_reactive = R"(
      </BehaviorTree>
 
  </root>
- )";
+ )`
 
-// clang-format on
 
-using namespace DummyNodes;
+func  main() {
+  var factory  core.BehaviorTreeFactory ;
 
-int main()
-{
-  BehaviorTreeFactory factory;
-
-  factory.registerSimpleCondition("BatteryOK", std::bind(CheckBattery));
-  factory.registerNodeType<MoveBaseAction>("MoveBase");
-  factory.registerNodeType<SaySomething>("SaySomething");
+  factory.RegisterSimpleCondition("BatteryOK", std::bind(CheckBattery));
+  factory.RegisterNodeType<MoveBaseAction>("MoveBase");
+  factory.RegisterNodeType<SaySomething>("SaySomething");
 
   // Compare the state transitions and messages using either
   // xml_text_sequence and xml_text_reactive.
@@ -67,35 +64,32 @@ int main()
   //  1) When Sequence is used, the ConditionNode is executed only __once__ because it returns SUCCESS.
   //  2) When ReactiveSequence is used, BatteryOK is executed at __each__ tick()
 
-  for (auto& xml_text : {xml_text_sequence, xml_text_reactive})
-  {
-    std::cout << "\n------------ BUILDING A NEW TREE ------------\n\n";
+  for _,xml_text :=range  []string {xml_text_sequence, xml_text_reactive}{
+    fmt.Printf("\n------------ BUILDING A NEW TREE ------------\n\n")
+     tree ,err:= factory.CreateTreeFromText(xml_text);
+    if err!=nil{
+        panic(err)
+    }
+   status := core.NodeStatus_IDLE;
 
-    auto tree = factory.createTreeFromText(xml_text);
-
-    NodeStatus status = NodeStatus::IDLE;
-#if 0
     // Tick the root until we receive either SUCCESS or RUNNING
     // same as: tree.tickRoot(Tree::WHILE_RUNNING)
-    std::cout << "--- ticking\n";
-    status = tree.tickWhileRunning();
-    std::cout << "--- status: " << toStr(status) << "\n\n";
-#else
+    fmt.Printf("--- ticking\n")
+    status = tree.TickWhileRunning();
+    fmt.Printf("--- status:%v \n\n",status.String())
     // If we need to run code between one tick() and the next,
     // we can implement our own while loop
-    while (status != NodeStatus::SUCCESS)
-    {
-      std::cout << "--- ticking\n";
-      status = tree.tickOnce();
-      std::cout << "--- status: " << toStr(status) << "\n\n";
+   for (status != core.NodeStatus_SUCCESS){
+       fmt.Printf("--- ticking\n")
+      status = tree.TickOnce();
+      fmt.Printf( "--- status:%v \n\n",status.)
 
       // if still running, add some wait time
-      if (status == NodeStatus::RUNNING)
-      {
-        tree.sleep(std::chrono::milliseconds(100));
+      if (status == core.NodeStatus_RUNNING) {
+        tree.Sleep(time.Millisecond*(100));
       }
     }
-#endif
+
   }
-  return 0;
+
 }

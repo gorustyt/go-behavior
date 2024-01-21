@@ -1,8 +1,6 @@
-#include "behaviortree_cpp/bt_factory.h"
+package main
 
-#include "dummy_nodes.h"
-
-using namespace BT;
+import "github.com/gorustyt/go-behavior/core"
 
 /** This tutorial will teach you how basic input/output ports work.
  *
@@ -25,7 +23,7 @@ using namespace BT;
 */
 
 // clang-format off
-static const char* xml_text = R"(
+var  xml_text = `(
 
  <root BTCPP_format="4" >
 
@@ -39,22 +37,16 @@ static const char* xml_text = R"(
      </BehaviorTree>
 
  </root>
- )";
-// clang-format on
+ )`
 
-class ThinkWhatToSay : public BT::SyncActionNode
-{
-public:
-  ThinkWhatToSay(const std::string& name, const BT::NodeConfig& config) :
-    BT::SyncActionNode(name, config)
-  {}
+func NewThinkWhatToSay(name string,cfg*core.NodeConfig,args ...interface{})*ThinkWhatToSay  {
+return &ThinkWhatToSay{
+    SyncActionNode:core.NewSyncActionNode(name,cfg),
+}
+}
+type  ThinkWhatToSay struct {
+    *core.SyncActionNode
 
-  // This Action simply write a value in the port "text"
-  BT::NodeStatus tick() override
-  {
-    setOutput("text", "The answer is 42");
-    return BT::NodeStatus::SUCCESS;
-  }
 
   // A node having ports MUST implement this STATIC method
   static BT::PortsList providedPorts()
@@ -62,26 +54,29 @@ public:
     return {BT::OutputPort<std::string>("text")};
   }
 };
+// This Action simply write a value in the port "text"
+func  (n*ThinkWhatToSay)Tick() core.NodeStatus {
+n.SetOutput("text", "The answer is 42");
+return core.NodeStatus_SUCCESS;
+}
+func  main() {
 
-int main()
-{
-  using namespace DummyNodes;
 
-  BehaviorTreeFactory factory;
+  var factory core.BehaviorTreeFactory ;
 
   // The class SaySomething has a method called providedPorts() that define the INPUTS.
   // In this case, it requires an input called "message"
-  factory.registerNodeType<SaySomething>("SaySomething");
+  factory.RegisterNodeType<SaySomething>("SaySomething");
 
   // Similarly to SaySomething, ThinkWhatToSay has an OUTPUT port called "text"
   // Both these ports are std::string, therefore they can connect to each other
-  factory.registerNodeType<ThinkWhatToSay>("ThinkWhatToSay");
+  factory.RegisterNodeType<ThinkWhatToSay>("ThinkWhatToSay");
 
   // SimpleActionNodes can not define their own method providedPorts(), therefore
   // we have to pass the PortsList explicitly if we want the Action to use getInput()
   // or setOutput();
-  PortsList say_something_ports = {InputPort<std::string>("message")};
-  factory.registerSimpleAction("SaySomething2", SaySomethingSimple, say_something_ports);
+    say_something_ports := core.InputPortWithDefaultValue("message","");
+  factory.RegisterSimpleAction("SaySomething2", NewSaySomethingSimple, say_something_ports);
 
   /* An INPUT can be either a string, for instance:
      *
@@ -93,9 +88,11 @@ int main()
      *     <SaySomething message="{the_answer}" />
      */
 
-  auto tree = factory.createTreeFromText(xml_text);
-
-  tree.tickWhileRunning();
+  tree ,err:= factory.CreateTreeFromText(xml_text);
+    if err!=nil{
+        panic(err)
+    }
+  tree.TickWhileRunning();
 
   /*  Expected output:
      *
@@ -110,5 +107,5 @@ int main()
     * SaySomething and SaySomething will read the message from the same entry.
     *
     */
-  return 0;
+
 }

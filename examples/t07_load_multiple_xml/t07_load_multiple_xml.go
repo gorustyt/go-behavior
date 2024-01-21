@@ -1,5 +1,9 @@
-#include "dummy_nodes.h"
-#include "behaviortree_cpp/bt_factory.h"
+package main
+
+import (
+    "fmt"
+    "github.com/gorustyt/go-behavior/core"
+)
 
 /** This example show how it is possible to:
  * - load BehaviorTrees from multiple files manually (without the <include> tag)
@@ -8,7 +12,7 @@
 
 // clang-format off
 
-static const char* xml_text_main = R"(
+var  xml_text_main =`(
 <root BTCPP_format="4">
     <BehaviorTree ID="MainTree">
         <Sequence>
@@ -24,48 +28,52 @@ static const char* xml_text_subA = R"(
     <BehaviorTree ID="SubA">
         <SaySomething message="Executing SubA" />
     </BehaviorTree>
-</root>  )";
+</root>  )`
 
-static const char* xml_text_subB = R"(
+var  xml_text_subB = `(
 <root BTCPP_format="4">
     <BehaviorTree ID="SubB">
         <SaySomething message="Executing SubB" />
     </BehaviorTree>
-</root>  )";
+</root>  )`
 
 // clang-format on
 
-using namespace BT;
 
-int main()
-{
-  BT::BehaviorTreeFactory factory;
-  factory.registerNodeType<DummyNodes::SaySomething>("SaySomething");
+
+func main() {
+  var factory core.BehaviorTreeFactory ;
+  factory.RegisterNodeType<DummyNodes::SaySomething>("SaySomething");
 
   // Register the behavior tree definitions, but do not instantiate them yet.
   // Order is not important.
-  factory.registerBehaviorTreeFromText(xml_text_subA);
-  factory.registerBehaviorTreeFromText(xml_text_subB);
-  factory.registerBehaviorTreeFromText(xml_text_main);
+  factory.RegisterBehaviorTreeFromText(xml_text_subA);
+  factory.RegisterBehaviorTreeFromText(xml_text_subB);
+  factory.RegisterBehaviorTreeFromText(xml_text_main);
 
   //Check that the BTs have been registered correctly
-  std::cout << "Registered BehaviorTrees:" << std::endl;
-  for (const std::string& bt_name : factory.registeredBehaviorTrees())
-  {
-    std::cout << " - " << bt_name << std::endl;
+  fmt.Printf("Registered BehaviorTrees:")
+  for  _,bt_name :=range  factory.RegisteredBehaviorTrees(){
+      fmt.Printf(" -%v\n ",bt_name )
   }
 
   // You can create the MainTree and the subtrees will be added automatically.
-  std::cout << "----- MainTree tick ----" << std::endl;
-  auto main_tree = factory.createTree("MainTree");
-  main_tree.tickWhileRunning();
+  fmt.Println("----- MainTree tick ----")
+  main_tree ,err:= factory.CreateTree("MainTree");
+  if err!=nil{
+      panic(err)
+  }
+  main_tree.TickWhileRunning();
 
   // ... or you can create only one of the subtree
-  std::cout << "----- SubA tick ----" << std::endl;
-  auto subA_tree = factory.createTree("SubA");
-  subA_tree.tickWhileRunning();
+  fmt.Println("----- SubA tick ----")
 
-  return 0;
+  subA_tree,err := factory.CreateTree("SubA");
+  if err!=nil{
+      panic(err)
+  }
+  subA_tree.TickWhileRunning();
+
 }
 /* Expected output:
 

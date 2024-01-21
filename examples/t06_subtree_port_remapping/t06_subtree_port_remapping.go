@@ -1,8 +1,9 @@
-#include "behaviortree_cpp/loggers/bt_cout_logger.h"
-#include "behaviortree_cpp/bt_factory.h"
+package main
 
-#include "movebase_node.h"
-#include "dummy_nodes.h"
+import (
+	"fmt"
+	"github.com/gorustyt/go-behavior/core"
+)
 
 /** In the CrossDoor example we did not exchange any information
  * between the Maintree and the DoorClosed subtree.
@@ -20,7 +21,7 @@
 
 // clang-format off
 
-static const char* xml_text = R"(
+var xml_text = `(
 <root BTCPP_format="4">
 
     <BehaviorTree ID="MainTree">
@@ -44,32 +45,30 @@ static const char* xml_text = R"(
     </BehaviorTree>
 
 </root>
- )";
+ )`
 
-// clang-format on
+func main() {
+	var factory core.BehaviorTreeFactory
 
-using namespace BT;
-using namespace DummyNodes;
+	factory.RegisterNodeType < SaySomething > ("SaySomething")
+	factory.RegisterNodeType < MoveBaseAction > ("MoveBase")
 
-int main()
-{
-  BehaviorTreeFactory factory;
+	err := factory.RegisterBehaviorTreeFromText(xml_text)
+	if err != nil {
+		panic(err)
+	}
+	tree, err := factory.CreateTree("MainTree")
+	if err != nil {
+		panic(err)
+	}
+	tree.TickWhileRunning()
 
-  factory.registerNodeType<SaySomething>("SaySomething");
-  factory.registerNodeType<MoveBaseAction>("MoveBase");
+	// let's visualize some information about the current state of the blackboards.
+	fmt.Printf("\n------ First BB ------")
+	tree.Subtrees[0].Blackboard.DebugMessage()
+	fmt.Printf("\n------ Second BB------")
+	tree.Subtrees[1].Blackboard.DebugMessage()
 
-  factory.registerBehaviorTreeFromText(xml_text);
-  auto tree = factory.createTree("MainTree");
-
-  tree.tickWhileRunning();
-
-  // let's visualize some information about the current state of the blackboards.
-  std::cout << "\n------ First BB ------" << std::endl;
-  tree.subtrees[0]->blackboard->debugMessage();
-  std::cout << "\n------ Second BB------" << std::endl;
-  tree.subtrees[1]->blackboard->debugMessage();
-
-  return 0;
 }
 
 /* Expected output:
