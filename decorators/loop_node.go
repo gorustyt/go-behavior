@@ -54,10 +54,7 @@ func (n *LoopNode) Tick() core.NodeStatus {
 			value := n.current_queue_.Front()
 			n.current_queue_.Remove(value)
 			popped = true
-			err := n.SetOutput("value", value.Value)
-			if err != nil {
-				panic(err)
-			}
+			n.SetOutput("value", value.Value)
 		}
 	}
 
@@ -76,14 +73,14 @@ func (n *LoopNode) Tick() core.NodeStatus {
 		n.SetStatus(core.NodeStatus_RUNNING)
 	}
 
-	child_state := n.Child().ExecuteTick()
-	n.child_running_ = (child_state == core.NodeStatus_RUNNING)
+	childState := n.Child().ExecuteTick()
+	n.child_running_ = childState == core.NodeStatus_RUNNING
 
-	if core.IsStatusCompleted(child_state) {
+	if core.IsStatusCompleted(childState) {
 		n.ResetChild()
 	}
 
-	if child_state == core.NodeStatus_FAILURE {
+	if childState == core.NodeStatus_FAILURE {
 		return core.NodeStatus_FAILURE
 	}
 	return core.NodeStatus_RUNNING
