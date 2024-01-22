@@ -1,19 +1,18 @@
-#include "Blackboard/blackboard_local.h"
-#include "behaviortree_cpp/behavior_tree.h"
-#include "behaviortree_cpp/bt_factory.h"
+package main
 
-using namespace BT;
+import "github.com/gorustyt/go-behavior/core"
 
-NodeStatus SayHello()
-{
+func  SayHello() core.NodeStatus {
   printf("hello\n");
   return NodeStatus::SUCCESS;
 }
+func NewActionTestNode() *ActionTestNode {
 
-class ActionTestNode : public ActionNode
+}
+type  ActionTestNode : public ActionNode
 {
 public:
-  ActionTestNode(const std::string& name) : ActionNode(name)
+  (const std::string& name) : ActionNode(name)
   {}
 
   NodeStatus tick() override

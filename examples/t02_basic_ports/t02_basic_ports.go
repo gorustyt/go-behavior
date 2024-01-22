@@ -1,6 +1,9 @@
 package main
 
-import "github.com/gorustyt/go-behavior/core"
+import (
+  "github.com/gorustyt/go-behavior/core"
+  "github.com/gorustyt/go-behavior/examples/sample_nodes"
+)
 
 /** This tutorial will teach you how basic input/output ports work.
  *
@@ -66,7 +69,7 @@ func  main() {
 
   // The class SaySomething has a method called providedPorts() that define the INPUTS.
   // In this case, it requires an input called "message"
-  factory.RegisterNodeType<SaySomething>("SaySomething");
+  factory.RegisterNodeType("SaySomething",sample_nodes.NewSaySomething);
 
   // Similarly to SaySomething, ThinkWhatToSay has an OUTPUT port called "text"
   // Both these ports are std::string, therefore they can connect to each other
@@ -76,7 +79,7 @@ func  main() {
   // we have to pass the PortsList explicitly if we want the Action to use getInput()
   // or setOutput();
     say_something_ports := core.InputPortWithDefaultValue("message","");
-  factory.RegisterSimpleAction("SaySomething2", NewSaySomethingSimple, say_something_ports);
+  factory.RegisterSimpleAction("SaySomething2", sample_nodes.SaySomethingSimple, say_something_ports);
 
   /* An INPUT can be either a string, for instance:
      *

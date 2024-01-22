@@ -3,13 +3,14 @@ package core
 import (
 	"errors"
 	"fmt"
+	"reflect"
 	"sync"
 )
 
 type NodeType int
 
-func (p NodeType) String() string {
-	switch p {
+func (p *NodeType) String() string {
+	switch *p {
 	case NodeType_ACTION:
 		return "Action"
 	case NodeType_CONDITION:
@@ -25,6 +26,31 @@ func (p NodeType) String() string {
 	}
 }
 
+func (p *NodeType) FromString(str string) error {
+	if str == "Action" {
+		*p = NodeType_ACTION
+	}
+
+	if str == "Condition" {
+		*p = NodeType_CONDITION
+	}
+
+	if str == "Control" {
+		*p = NodeType_CONTROL
+	}
+
+	if str == "Decorator" {
+		*p = NodeType_DECORATOR
+	}
+
+	if str == "SubTree" {
+		*p = NodeType_SUBTREE
+	}
+
+	*p = NodeType_UNDEFINED
+	return nil
+}
+
 const (
 	NodeType_UNDEFINED NodeType = iota
 	NodeType_ACTION
@@ -36,8 +62,8 @@ const (
 
 type NodeStatus int
 
-func (n NodeStatus) String() string {
-	switch n {
+func (n *NodeStatus) String() string {
+	switch *n {
 	case NodeStatus_SUCCESS:
 		return "SUCCESS"
 	case NodeStatus_FAILURE:
@@ -51,11 +77,36 @@ func (n NodeStatus) String() string {
 	}
 	return ""
 }
-func (n NodeStatus) StringColor(colored bool) string {
+
+func (n *NodeStatus) FromString(str string) error {
+	if str == "IDLE" {
+		*n = NodeStatus_IDLE
+	}
+
+	if str == "RUNNING" {
+		*n = NodeStatus_RUNNING
+	}
+
+	if str == "SUCCESS" {
+		*n = NodeStatus_SUCCESS
+	}
+
+	if str == "FAILURE" {
+		*n = NodeStatus_FAILURE
+	}
+
+	if str == "SKIPPED" {
+		*n = NodeStatus_SKIPPED
+	}
+
+	return fmt.Errorf("Cannot convert this to NodeStatus:%v ", str)
+}
+
+func (n *NodeStatus) StringColor(colored bool) string {
 	if !colored {
 		return n.String()
 	} else {
-		switch n {
+		switch *n {
 		case NodeStatus_SUCCESS:
 			return "\x1b[32mSUCCESS\x1b[0m" // RED
 		case NodeStatus_FAILURE:
@@ -141,8 +192,8 @@ func (n NodeStatus) IsCompleted() bool {
 
 type PortDirection int
 
-func (p PortDirection) String() string {
-	switch p {
+func (p *PortDirection) String() string {
+	switch *p {
 	case PortDirection_INPUT:
 		return "Input"
 	case PortDirection_OUTPUT:
@@ -151,6 +202,22 @@ func (p PortDirection) String() string {
 		return "InOut"
 	}
 	return "InOut"
+}
+
+func (p *PortDirection) FromString(str string) error {
+	if str == "Input" || str == "INPUT" {
+		*p = PortDirection_INPUT
+	}
+
+	if str == "Output" || str == "OUTPUT" {
+		*p = PortDirection_OUTPUT
+	}
+
+	if str == "InOut" || str == "INOUT" {
+		*p = PortDirection_INOUT
+	}
+
+	return fmt.Errorf("cannot convert this to PortDirection: %v", str)
 }
 
 const (
@@ -519,10 +586,6 @@ func (n *TreeNode) Config() *NodeConfig {
 }
 
 func (n *TreeNode) SetOutput(key string, value any) {
-	if n.config.Blackboard == nil {
-		panic("setOutput() failed: trying to access a Blackboard(BB) entry, but BB is invalid")
-	}
-
 	remappedKey, ok := n.config.OutputPorts[key]
 	if !ok {
 		panic(fmt.Sprintf("setOutput() failed:  NodeConfig::output_ports does not contain the key: [%v]", key))
@@ -531,17 +594,15 @@ func (n *TreeNode) SetOutput(key string, value any) {
 		n.config.Blackboard.Set(key, value)
 		return
 	}
-
-	if _, ok = IsBlackboardPointer(remappedKey); !ok {
+	ss, ok := IsBlackboardPointer(remappedKey)
+	if !ok {
 		panic("setOutput requires a blackboard pointer. Use {}")
 	}
 
 	if value == nil {
-		panic("setOutput<Any> is not allowed, unless the port was declared using OutputPort<Any>")
+		panic("setOutput nil is not allowed")
 	}
-
-	remappedKey = StripBlackboardPointer(remappedKey)
-	n.config.Blackboard.Set(remappedKey, value)
+	n.config.Blackboard.Set(ss, value)
 }
 
 func (n *TreeNode) GetRawPortValue(key string) string {
@@ -614,10 +675,10 @@ func GetRemappedKey(portName string, remappedPort string) (res string, err error
 func (n *TreeNode) GetInput(key string, destination any) (res any, err error) {
 	ParseString := func(str string) any {
 		switch destination.(type) {
-		case NodeType, PortDirection:
+		case *NodeType, *PortDirection:
 			it, ok := n.config.Enums[str]
 			if ok {
-				return it
+				reflect.ValueOf(destination).Elem().Set(reflect.ValueOf(it))
 			}
 		}
 		return ConvFromString(str, destination)

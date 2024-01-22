@@ -3,7 +3,6 @@ package core
 import (
 	"container/list"
 	"errors"
-	"fmt"
 	"strconv"
 	"strings"
 	"sync"
@@ -68,57 +67,61 @@ func IsAllowedPortName(str string) bool {
 func IsStatusCompleted(status NodeStatus) bool {
 	return status == NodeStatus_SUCCESS || status == NodeStatus_FAILURE
 }
+
+type IFromStr interface {
+	FromString(str string) error
+}
+
 func ConvFromString(str string, value any) error {
 	switch v := value.(type) {
 	case *int:
-		res, err := convertInt64FromString(str)
+		res, err := ConvertInt64FromString(str)
 		if err != nil {
 			return err
 		}
 		*v = int(res)
 	case *float64:
-		res, err := convertFloat64FromString(str)
+		res, err := ConvertFloat64FromString(str)
 		if err != nil {
 			return err
 		}
 		*v = res
 	case *[]float64:
-		res, err := convertFloat64sFromString(str)
+		res, err := ConvertFloat64sFromString(str)
 		if err != nil {
 			return err
 		}
 		*v = append(*v, res...)
 	case *int32:
-		res, err := convertInt64FromString(str)
+		res, err := ConvertInt64FromString(str)
 		if err != nil {
 			return err
 		}
 		*v = int32(res)
 	case *int64:
-		res, err := convertInt64FromString(str)
+		res, err := ConvertInt64FromString(str)
 		if err != nil {
 			return err
 		}
 		*v = res
 	case *[]int64:
-		res, err := convertInt64sFromString(str)
+		res, err := ConvertInt64sFromString(str)
 		if err != nil {
 			return err
 		}
 		*v = append(*v, res...)
 	case *bool:
-		*v = convertBoolFromString(str)
-	case *NodeStatus:
-		*v = convertNodeStatusFromString(str)
-	case *PortDirection:
-		*v = convertPortDirectionFromString(str)
-	case *NodeType:
-		*v = convertNodeTypeFromString(str)
+		*v = ConvertBoolFromString(str)
+	default:
+		if tmp, ok := value.(IFromStr); ok {
+			return tmp.FromString(str)
+		}
+		return errors.New("invalid format")
 	}
-	return errors.New("invalid format")
+	return nil
 }
 
-func convertBoolFromString(str string) bool {
+func ConvertBoolFromString(str string) bool {
 	if len(str) == 1 {
 		if str[0] == '0' {
 			return false
@@ -138,74 +141,10 @@ func convertBoolFromString(str string) bool {
 	panic("convertFromString(): invalid bool conversion")
 }
 
-func convertNodeStatusFromString(str string) NodeStatus {
-	if str == "IDLE" {
-		return NodeStatus_IDLE
-	}
-
-	if str == "RUNNING" {
-		return NodeStatus_RUNNING
-	}
-
-	if str == "SUCCESS" {
-		return NodeStatus_SUCCESS
-	}
-
-	if str == "FAILURE" {
-		return NodeStatus_FAILURE
-	}
-
-	if str == "SKIPPED" {
-		return NodeStatus_SKIPPED
-	}
-
-	panic(fmt.Sprintf("Cannot convert this to NodeStatus:%v ", str))
-}
-
-func convertNodeTypeFromString(str string) NodeType {
-	if str == "Action" {
-		return NodeType_ACTION
-	}
-
-	if str == "Condition" {
-		return NodeType_CONDITION
-	}
-
-	if str == "Control" {
-		return NodeType_CONTROL
-	}
-
-	if str == "Decorator" {
-		return NodeType_DECORATOR
-	}
-
-	if str == "SubTree" {
-		return NodeType_SUBTREE
-	}
-
-	return NodeType_UNDEFINED
-}
-
-func convertPortDirectionFromString(str string) PortDirection {
-	if str == "Input" || str == "INPUT" {
-		return PortDirection_INPUT
-	}
-
-	if str == "Output" || str == "OUTPUT" {
-		return PortDirection_OUTPUT
-	}
-
-	if str == "InOut" || str == "INOUT" {
-		return PortDirection_INOUT
-	}
-
-	panic(fmt.Sprintf("Cannot convert this to PortDirection: %v", str))
-}
-
-func convertInt64sFromString(str string) (res []int64, err error) {
+func ConvertInt64sFromString(str string) (res []int64, err error) {
 	parts := strings.Split(str, ";")
 	for _, v := range parts {
-		r, err := convertInt64FromString(v)
+		r, err := ConvertInt64FromString(v)
 		if err != nil {
 			return nil, err
 		}
@@ -214,10 +153,10 @@ func convertInt64sFromString(str string) (res []int64, err error) {
 	return res, nil
 }
 
-func convertFloat64sFromString(str string) (res []float64, err error) {
+func ConvertFloat64sFromString(str string) (res []float64, err error) {
 	parts := strings.Split(str, ";")
 	for _, v := range parts {
-		r, err := convertFloat64FromString(v)
+		r, err := ConvertFloat64FromString(v)
 		if err != nil {
 			return nil, err
 		}
@@ -226,11 +165,11 @@ func convertFloat64sFromString(str string) (res []float64, err error) {
 	return res, nil
 }
 
-func convertFloat64FromString(str string) (res float64, err error) {
+func ConvertFloat64FromString(str string) (res float64, err error) {
 	return strconv.ParseFloat(str, 64)
 }
 
-func convertInt64FromString(str string) (res int64, err error) {
+func ConvertInt64FromString(str string) (res int64, err error) {
 	return strconv.ParseInt(str, 10, 64)
 }
 

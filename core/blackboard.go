@@ -8,7 +8,6 @@ import (
 
 type Blackboard struct {
 	mutex_             sync.Mutex
-	recursiveMutex     sync.Mutex
 	storage            map[string]*Entry
 	parentBb           *Blackboard
 	internalToExternal map[string]string

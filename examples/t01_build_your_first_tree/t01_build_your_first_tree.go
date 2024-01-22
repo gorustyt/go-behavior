@@ -1,6 +1,9 @@
 package main
 
-import "github.com/gorustyt/go-behavior/core"
+import (
+ "github.com/gorustyt/go-behavior/core"
+ "github.com/gorustyt/go-behavior/examples/sample_nodes"
+)
 
 /** Behavior Tree are used to create a logic to decide what
  * to "do" and when. For this reason, our main building blocks are
@@ -44,19 +47,19 @@ func  main() {
   // The recommended way to create a Node is through inheritance.
   // Even if it requires more boilerplate, it allows you to use more functionalities
   // like ports (we will discuss this in future tutorials).
-  factory.RegisterNodeType<ApproachObject>("ApproachObject");
+  factory.RegisterNodeType("ApproachObject",sample_nodes.NewApproachObject);
 
   // Registering a SimpleActionNode using a function pointer.
   // you may also use C++11 lambdas instead of std::bind
   factory.RegisterSimpleCondition("CheckBattery", [&](TreeNode&) { return CheckBattery(); });
 
   //You can also create SimpleActionNodes using methods of a class
-  GripperInterface gripper;
-  factory.registerSimpleAction("OpenGripper", [&](TreeNode&){ return gripper.open(); } );
-  factory.registerSimpleAction("CloseGripper", [&](TreeNode&){ return gripper.close(); } );
+ var  gripper sample_nodes.GripperInterface ;
+  factory.RegisterSimpleAction("OpenGripper", [&](TreeNode&){ return gripper.open(); } );
+  factory.RegisterSimpleAction("CloseGripper", [&](TreeNode&){ return gripper.close(); } );
   // Load dynamically a plugin and register the TreeNodes it contains
   // it automated the registering step.
-  factory.registerFromPlugin("../sample_nodes/bin/libdummy_nodes_dyn.so");
+  factory.RegisterFromPlugin("../sample_nodes/bin/libdummy_nodes_dyn.so");
 
 
   // Trees are created at deployment-time (i.e. at run-time, but only once at the beginning).

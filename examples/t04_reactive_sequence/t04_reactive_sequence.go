@@ -82,7 +82,7 @@ func  main() {
    for (status != core.NodeStatus_SUCCESS){
        fmt.Printf("--- ticking\n")
       status = tree.TickOnce();
-      fmt.Printf( "--- status:%v \n\n",status.)
+      fmt.Printf( "--- status:%v \n\n",status)
 
       // if still running, add some wait time
       if (status == core.NodeStatus_RUNNING) {
